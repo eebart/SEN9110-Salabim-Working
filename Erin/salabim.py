@@ -27,7 +27,7 @@ see www.salabim.org for more information, the manual and updates.
 '''
 
 import platform
-Pythonista = (platform.system() == 'Darwin')
+Pythonista = (platform.system() == 'Darwin' and platform.machine().startswith('iP'))
 
 import heapq
 import random

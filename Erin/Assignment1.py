@@ -1,23 +1,6 @@
-# What's up guys!!
-
-## Short summary of assignment
-
-# Build a simulation model of airport that mimics:
-# - Passport control (triangular 30-45-90 seconds)
-# - Security scan (constant 10 seconds)
-# Passengers arrive randomly (iat normal 60 seconds)
-# Luggage on belt at security scan, one at a time (20-40 seconds)
-# Conveyor 10m, speed 0.5 m/s
-# At security scan manual check for 10% of passengers with one person, others don't wait
-# After luggage, passengers take luggage again (20-40 seconds)
-# Passenger movements 2.5km/h, 10m along luggage belt
-# Distance between other processes 5m ????
-
-# Model for 4 hours, warm-up 1 hour.
-# Run 10 replications (average + 90% confidence interval)
-# Provide utilization data of passport control, scanner and secondary check
-
 import salabim as sim
+import time
+import sys
 
 class PassengerGenerator(sim.Component):
     def process(self):
@@ -60,10 +43,8 @@ class Passenger(sim.Component):
         yield self.hold(10/(0.5*1000/(60*60))) # convert 2.5 km/h to m/s
 
         # Pick up luggage, not matching owner
-        self.enter(waitingline_passengerLuggagePickup)
-        if luggagePickup.ispassive():
-            luggagePickup.activate()
-        yield self.passivate()
+        yield self.hold(sim.Uniform(20,40).sample())
+        waitingline_luggage.pop()
 
 class Luggage(sim.Component):
     def __init__(self, passengerName, *args, **kwargs):
@@ -73,35 +54,8 @@ class Luggage(sim.Component):
     def process(self):
         # Roll along luggage belt
         yield self.hold(10/(2.5*1000/(60*60))) # convert 2.5 km/h to m/s
-
         # Enter luggage waiting line
-        self.enter(waitingline_luggageLuggagePickup)
-        if luggagePickup.ispassive():
-                luggagePickup.activate()
-        self.passivate()
-
-class LuggagePickup(sim.Component):
-    def process(self):
-        while True:
-            while len(waitingline_passengerLuggagePickup) == 0 or len(waitingline_luggageLuggagePickup) == 0:
-                yield self.passivate()
-
-            for passenger in waitingline_passengerLuggagePickup:
-                for luggage in waitingline_luggageLuggagePickup:
-                    if luggage.owner == passenger.name():
-                        #found luggage of owner!
-                        waitingline_passengerLuggagePickup.remove(passenger)
-                        waitingline_luggageLuggagePickup.remove(luggage)
-
-                        yield self.hold(sim.Uniform(20,40).sample())
-
-                        print(luggage)
-                        print(passenger)
-
-                        passenger.activate()
-                        luggage.activate()
-
-                        break
+        self.enter(waitingline_luggage)
 
 class PassportControl(sim.Component):
     def process(self):
@@ -130,45 +84,72 @@ class PatDown(sim.Component):
             yield self.hold(10) #TODO not yet defined
             self.passenger.activate()
 
+#pax statistics
+pax_thru_mean = 0
+pax_thru_95 = 0
 
-env = sim.Environment(trace=True)
+#queue statistics
+passport_length = 0
+passport_waiting = 0
+luggage_drop_length = 0
+luggage_drop_waiting = 0
+luggage_pickup_length = 0
+luggage_pickup_waiting = 0
 
-PassengerGenerator()
-passportcontrol = PassportControl()
-securityscan = SecurityScan()
-patdown = PatDown()
-luggagePickup = LuggagePickup()
+#utilization statistics
+passport_util = 0
+scanner_util = 0
+patdown_util = 0
 
-waitingline_passport = sim.Queue('waitingline_passport')
-waitingline_security = sim.Queue('waitingline_security')
-waitingline_patdown = sim.Queue('waitingline_patdown')
+replications = 10
+if len(sys.argv) > 1:
+    replications = int(sys.argv[1])
 
-waitingline_luggageLuggagePickup = sim.Queue('waitingline_luggageLuggagePickup')
-waitingline_passengerLuggagePickup = sim.Queue('waitingline_passengerLuggagePickup')
+for exp in range(0,replications):
+    #steipatr non-random seed for reproduceability
+    env = sim.Environment(trace=False,random_seed=exp)
 
-env.run(till=60*60)
+    PassengerGenerator()
+    passportcontrol = PassportControl()
+    securityscan = SecurityScan()
+    patdown = PatDown()
+
+    waitingline_passport = sim.Queue('waitingline_passport')
+    waitingline_security = sim.Queue('waitingline_security')
+    waitingline_patdown = sim.Queue('waitingline_patdown')
+    waitingline_luggage = sim.Queue('waitingline_luggage')
+
+    waitingline_passport.length.monitor(False)
+    waitingline_security.length.monitor(False)
+    waitingline_patdown.length.monitor(False)
+    waitingline_luggage.length.monitor(False)
+    env.run(duration=60*60)
+    waitingline_passport.length.monitor(True)
+    waitingline_security.length.monitor(True)
+    waitingline_patdown.length.monitor(True)
+    waitingline_luggage.length.monitor(True)
+    env.run(duration=4*60*60)
+
+    passport_length += waitingline_passport.length.mean()
+    passport_waiting += waitingline_passport.length_of_stay.mean()
+    luggage_pickup_length += waitingline_luggage.length.mean()
+    luggage_pickup_waiting += waitingline_luggage.length_of_stay.mean()
 
 print()
-waitingline_passport.print_statistics()
-waitingline_security.print_statistics()
-waitingline_patdown.print_statistics()
-waitingline_passengerLuggagePickup.print_statistics()
-waitingline_luggageLuggagePickup.print_statistics()
-
-#for running multiple repetitions
-#repetitions = 100
-#queue_mean = 0
-
-#for exp in range(0,repetitions):
-#    env = sim.Environment(trace=False,random_seed=exp)
-#    CustomerGenerator()
-#    clerks = sim.Queue('clerks')
-#    for i in range(3):
-#        Clerk().enter(clerks)
-#    waitingline = sim.Queue('waitingline')
-
-#    env.run(till=50000)
-
-#    queue_mean += waitingline.length.mean()
-
-#print("queue mean is",queue_mean/repetitions,"for",repetitions,"runs")
+print("-- Pax Statistics --")
+print("passenger throughput time mean:")
+print("passenger throughput time 95% confidence interval:")
+print()
+print("-- Queue Statistics --")
+print("passport queue length mean:",passport_length/replications)
+print("passport queue waiting time mean [s]:",passport_waiting/replications)
+print("luggage drop length mean:")
+print("luggage drop waiting time mean [s]:")
+print("luggage pickup length mean:",luggage_pickup_length/replications)
+print("luggage pickup waiting time mean [s]:",luggage_pickup_waiting/replications)
+print()
+print("-- Utilization Statistics --")
+print("passport control utilization:")
+print("scanner utilization:")
+print("patdown utilization:")
+print()
