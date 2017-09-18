@@ -94,7 +94,7 @@ class PassportControl(Server):
 
             self.startUtilTime()
             self.passenger = waitingline_passport.pop()
-            yield self.hold(sim.Uniform(20,40).sample())
+            yield self.hold(sim.Triangular(30.,90.,45.).sample())
             self.passenger.activate()
 
 class LuggageDropoff(Server):
@@ -106,7 +106,7 @@ class LuggageDropoff(Server):
             self.passenger = waitingline_luggageDropoff.pop()
 
             Luggage(self.passenger.name())
-            yield self.hold(sim.Triangular(30.,90.,45.).sample())
+            yield self.hold(sim.Uniform(20,40).sample())
             self.passenger.activate()
 
 class SecurityScan(Server):
