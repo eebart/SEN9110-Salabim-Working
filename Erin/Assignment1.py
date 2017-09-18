@@ -1,3 +1,4 @@
+#edited by steipatr at 15:23
 import salabim as sim
 import time, sys
 
@@ -5,10 +6,11 @@ class PassengerGenerator(sim.Component):
     def process(self):
         while True:
             Passenger()
-            yield self.hold(sim.Normal(60).sample())
+            yield self.hold(sim.Exponential(60).sample())
 
 class Passenger(sim.Component):
     def process(self):
+        self.arrivaltime = env.now()
         # Passport control
         self.enter(waitingline_passport)
         if passportControl.ispassive():
@@ -48,6 +50,7 @@ class Passenger(sim.Component):
         if luggagePickup.ispassive():
             luggagePickup.activate()
         yield self.passivate()
+        luggagePickup.monitor_time_in_complex.tally(env.now() - self.arrivaltime)
 
 class Luggage(sim.Component):
     def __init__(self, passengerName, *args, **kwargs):
@@ -92,9 +95,7 @@ class PassportControl(Server):
             self.startUtilTime()
             self.passenger = waitingline_passport.pop()
             yield self.hold(sim.Uniform(20,40).sample())
-
             self.passenger.activate()
-
 
 class LuggageDropoff(Server):
     def process(self):
@@ -133,6 +134,10 @@ class PatDown(Server):
             self.passenger.activate()
 
 class LuggagePickup(Server):
+    def __init__(self, *args, **kwargs):
+      super().__init__(*args, **kwargs)
+      self.monitor_time_in_complex = sim.Monitor(name='time in complex')
+
     def process(self):
         noMatches = False
 
@@ -141,7 +146,9 @@ class LuggagePickup(Server):
                 yield self.passivate()
 
             for passenger in waitingline_passengerLuggagePickup:
+                #print(passenger.name())
                 for luggage in waitingline_luggageLuggagePickup:
+                    #print(luggage.name())
                     if luggage.owner == passenger.name():
                         #found luggage of owner!
                         waitingline_passengerLuggagePickup.remove(passenger)
@@ -193,11 +200,14 @@ for exp in range(0,replications):
     waitingline_luggageLuggagePickup = sim.Queue('waitingline_luggageLuggagePickup')
     waitingline_passengerLuggagePickup = sim.Queue('waitingline_passengerLuggagePickup')
 
+    #TODO why suspend only length monitoring? Does everything need to be suspended?
     # Warm-up - don't collect statistics
     waitingline_passport.length.monitor(False)
     waitingline_security.length.monitor(False)
     waitingline_patdown.length.monitor(False)
     waitingline_luggageDropoff.length.monitor(False)
+    waitingline_luggageLuggagePickup.length.monitor(False)
+    waitingline_passengerLuggagePickup.length.monitor(False)
     env.run(duration=60*60)
 
     # Collect statistics
@@ -205,23 +215,31 @@ for exp in range(0,replications):
     waitingline_security.length.monitor(True)
     waitingline_patdown.length.monitor(True)
     waitingline_luggageDropoff.length.monitor(True)
+    waitingline_luggageLuggagePickup.length.monitor(True)
+    waitingline_passengerLuggagePickup.length.monitor(True)
     env.run(duration=4*60*60)
+
+    pax_thru_mean += luggagePickup.monitor_time_in_complex.mean()
+    pax_thru_95 += luggagePickup.monitor_time_in_complex.percentile(95)
 
     passport_length += waitingline_passport.length.mean()
     passport_waiting += waitingline_passport.length_of_stay.mean()
-    luggage_pickup_length += waitingline_luggageDropoff.length.mean()
-    luggage_pickup_waiting += waitingline_luggageDropoff.length_of_stay.mean()
+    luggage_drop_length += waitingline_luggageDropoff.length.mean()
+    luggage_drop_waiting += waitingline_luggageDropoff.length_of_stay.mean()
+    luggage_pickup_length += waitingline_passengerLuggagePickup.length.mean()
+    luggage_pickup_waiting += waitingline_passengerLuggagePickup.length_of_stay.mean()
 
 print()
 print("-- Pax Statistics --")
-print("passenger throughput time mean:")
-print("passenger throughput time 95% confidence interval:")
+print("passenger throughput time mean [s]:",pax_thru_mean/replications)
+#TODO why not use pax_thru_95 here?
+print("passenger throughput time 95% confidence interval [s]:",luggagePickup.monitor_time_in_complex.percentile(95)/replications)
 print()
 print("-- Queue Statistics --")
 print("passport queue length mean:",passport_length/replications)
 print("passport queue waiting time mean [s]:",passport_waiting/replications)
-print("luggage drop length mean:")
-print("luggage drop waiting time mean [s]:")
+print("luggage drop length mean:",luggage_drop_length/replications)
+print("luggage drop waiting time mean [s]:",luggage_drop_waiting/replications)
 print("luggage pickup length mean:",luggage_pickup_length/replications)
 print("luggage pickup waiting time mean [s]:",luggage_pickup_waiting/replications)
 print()
