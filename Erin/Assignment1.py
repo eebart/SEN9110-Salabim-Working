@@ -43,8 +43,11 @@ class Passenger(sim.Component):
         yield self.hold(10/(0.5*1000/(60*60))) # convert 2.5 km/h to m/s
 
         # Pick up luggage, not matching owner
-        yield self.hold(sim.Uniform(20,40).sample())
-        waitingline_luggage.pop()
+        self.enter(waitingline_passengerLuggagePickup)
+        if luggagePickup.ispassive():
+            luggagePickup.activate()
+        yield self.passivate()
+
 
 class Luggage(sim.Component):
     def __init__(self, passengerName, *args, **kwargs):
@@ -54,8 +57,12 @@ class Luggage(sim.Component):
     def process(self):
         # Roll along luggage belt
         yield self.hold(10/(2.5*1000/(60*60))) # convert 2.5 km/h to m/s
+
         # Enter luggage waiting line
-        self.enter(waitingline_luggage)
+        self.enter(waitingline_luggageLuggagePickup)
+        #if luggagePickup.ispassive():
+        #        luggagePickup.activate()
+        self.passivate()
 
 class PassportControl(sim.Component):
     def process(self):
@@ -83,6 +90,26 @@ class PatDown(sim.Component):
             self.passenger = waitingline_patdown.pop()
             yield self.hold(10) #TODO not yet defined
             self.passenger.activate()
+
+class LuggagePickup(sim.Component):
+    def process(self):
+        while True:
+            while len(waitingline_passengerLuggagePickup) == 0 or len(waitingline_luggageLuggagePickup) == 0:
+                yield self.passivate()
+
+            for passenger in waitingline_passengerLuggagePickup:
+                for luggage in waitingline_luggageLuggagePickup:
+                    if luggage.owner == passenger.name():
+                        #found luggage of owner!
+                        waitingline_passengerLuggagePickup.remove(passenger)
+                        waitingline_luggageLuggagePickup.remove(luggage)
+
+                        yield self.hold(sim.Uniform(20,40).sample())
+
+                        passenger.activate()
+                        #luggage.activate() This is problematic because it is never the luggage who activates successfully
+
+                        break
 
 #pax statistics
 pax_thru_mean = 0
@@ -113,17 +140,24 @@ for exp in range(0,replications):
     passportcontrol = PassportControl()
     securityscan = SecurityScan()
     patdown = PatDown()
+    luggagePickup = LuggagePickup()
 
     waitingline_passport = sim.Queue('waitingline_passport')
     waitingline_security = sim.Queue('waitingline_security')
     waitingline_patdown = sim.Queue('waitingline_patdown')
     waitingline_luggage = sim.Queue('waitingline_luggage')
 
+    waitingline_luggageLuggagePickup = sim.Queue('waitingline_luggageLuggagePickup')
+    waitingline_passengerLuggagePickup = sim.Queue('waitingline_passengerLuggagePickup')
+
+    # Warm-up - don't collect statistics
     waitingline_passport.length.monitor(False)
     waitingline_security.length.monitor(False)
     waitingline_patdown.length.monitor(False)
     waitingline_luggage.length.monitor(False)
     env.run(duration=60*60)
+
+    # Collect statistics
     waitingline_passport.length.monitor(True)
     waitingline_security.length.monitor(True)
     waitingline_patdown.length.monitor(True)
