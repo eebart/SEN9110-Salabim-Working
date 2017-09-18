@@ -1,6 +1,5 @@
 import salabim as sim
-import time
-import sys
+import time, sys
 
 class PassengerGenerator(sim.Component):
     def process(self):
@@ -12,8 +11,8 @@ class Passenger(sim.Component):
     def process(self):
         # Passport control
         self.enter(waitingline_passport)
-        if passportcontrol.ispassive():
-            passportcontrol.activate()
+        if passportControl.ispassive():
+            passportControl.activate()
         yield self.passivate()
 
         # Walking from passport control to security scan
@@ -21,13 +20,15 @@ class Passenger(sim.Component):
 
         # Security Scan
         self.enter(waitingline_security)
-        if securityscan.ispassive():
-            securityscan.activate()
+        if securityScan.ispassive():
+            securityScan.activate()
         yield self.passivate()
 
         # Put luggage on belt
-        yield self.hold(sim.Uniform(20,40).sample())
-        Luggage(self.name())
+        self.enter(waitingline_luggageDropoff)
+        if luggageDropoff.ispassive():
+            luggageDropoff.activate()
+        yield self.passivate()
 
         # 10% Pat Down Requirement
         if (sim.Uniform(1,100).sample() <= 10):
@@ -35,19 +36,18 @@ class Passenger(sim.Component):
             yield self.hold(5/(2.5*1000/(60*60))) # convert 2.5 km/h to m/s
             # Patdown
             self.enter(waitingline_patdown)
-            if patdown.ispassive():
-                patdown.activate()
+            if patDown.ispassive():
+                patDown.activate()
             yield self.passivate()
 
         # Walking along luggage belt
         yield self.hold(10/(0.5*1000/(60*60))) # convert 2.5 km/h to m/s
 
-        # Pick up luggage, not matching owner
+        # Pick up luggage, matching owner
         self.enter(waitingline_passengerLuggagePickup)
         if luggagePickup.ispassive():
             luggagePickup.activate()
         yield self.passivate()
-
 
 class Luggage(sim.Component):
     def __init__(self, passengerName, *args, **kwargs):
@@ -64,37 +64,80 @@ class Luggage(sim.Component):
         #        luggagePickup.activate()
         self.passivate()
 
-class PassportControl(sim.Component):
+class Server(sim.Component):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.activeTime = 0
+        self.startProcessTime = -1
+
+    def startUtilTime(self):
+        self.startProcessTime = env.now()
+
+    def endUtilTime(self):
+        if self.startProcessTime >= 0:
+            endNow = env.now()
+            self.activeTime += endNow - self.startProcessTime
+            self.startProcessTime = -1
+
+    def getUtilization(self):
+        return self.activeTime / (env.now() - self._creation_time)
+
+class PassportControl(Server):
     def process(self):
         while True:
             while len(waitingline_passport) == 0:
+                self.endUtilTime()
                 yield self.passivate()
+
+            self.startUtilTime()
             self.passenger = waitingline_passport.pop()
+            yield self.hold(sim.Uniform(20,40).sample())
+
+            self.passenger.activate()
+
+
+class LuggageDropoff(Server):
+    def process(self):
+        while True:
+            while len(waitingline_luggageDropoff) == 0:
+                yield self.passivate()
+
+            self.passenger = waitingline_luggageDropoff.pop()
+
+            Luggage(self.passenger.name())
             yield self.hold(sim.Triangular(30.,90.,45.).sample())
             self.passenger.activate()
 
-class SecurityScan(sim.Component):
+class SecurityScan(Server):
     def process(self):
         while True:
             while len(waitingline_security) == 0:
+                self.endUtilTime()
                 yield self.passivate()
+
+            self.startUtilTime()
             self.passenger = waitingline_security.pop()
             yield self.hold(10)
             self.passenger.activate()
 
-class PatDown(sim.Component):
+class PatDown(Server):
     def process(self):
         while True:
             while len(waitingline_patdown) == 0:
+                self.endUtilTime()
                 yield self.passivate()
+
+            self.startUtilTime()
             self.passenger = waitingline_patdown.pop()
-            yield self.hold(10) #TODO not yet defined
+            yield self.hold(sim.Uniform(60,120).sample())
             self.passenger.activate()
 
-class LuggagePickup(sim.Component):
+class LuggagePickup(Server):
     def process(self):
+        noMatches = False
+
         while True:
-            while len(waitingline_passengerLuggagePickup) == 0 or len(waitingline_luggageLuggagePickup) == 0:
+            while len(waitingline_passengerLuggagePickup) == 0 or len(waitingline_luggageLuggagePickup) == 0 or noMatches:
                 yield self.passivate()
 
             for passenger in waitingline_passengerLuggagePickup:
@@ -103,13 +146,13 @@ class LuggagePickup(sim.Component):
                         #found luggage of owner!
                         waitingline_passengerLuggagePickup.remove(passenger)
                         waitingline_luggageLuggagePickup.remove(luggage)
-
                         yield self.hold(sim.Uniform(20,40).sample())
-
                         passenger.activate()
                         #luggage.activate() This is problematic because it is never the luggage who activates successfully
 
                         break
+
+            noMatches = True
 
 #pax statistics
 pax_thru_mean = 0
@@ -134,19 +177,19 @@ if len(sys.argv) > 1:
 
 for exp in range(0,replications):
     #steipatr non-random seed for reproduceability
-    env = sim.Environment(trace=False,random_seed=exp)
+    env = sim.Environment(trace=True,random_seed=exp)
 
     PassengerGenerator()
-    passportcontrol = PassportControl()
-    securityscan = SecurityScan()
-    patdown = PatDown()
+    passportControl = PassportControl()
+    luggageDropoff = LuggageDropoff()
+    securityScan = SecurityScan()
+    patDown = PatDown()
     luggagePickup = LuggagePickup()
 
     waitingline_passport = sim.Queue('waitingline_passport')
     waitingline_security = sim.Queue('waitingline_security')
     waitingline_patdown = sim.Queue('waitingline_patdown')
-    waitingline_luggage = sim.Queue('waitingline_luggage')
-
+    waitingline_luggageDropoff = sim.Queue('waitingline_luggageDropoff')
     waitingline_luggageLuggagePickup = sim.Queue('waitingline_luggageLuggagePickup')
     waitingline_passengerLuggagePickup = sim.Queue('waitingline_passengerLuggagePickup')
 
@@ -154,20 +197,20 @@ for exp in range(0,replications):
     waitingline_passport.length.monitor(False)
     waitingline_security.length.monitor(False)
     waitingline_patdown.length.monitor(False)
-    waitingline_luggage.length.monitor(False)
+    waitingline_luggageDropoff.length.monitor(False)
     env.run(duration=60*60)
 
     # Collect statistics
     waitingline_passport.length.monitor(True)
     waitingline_security.length.monitor(True)
     waitingline_patdown.length.monitor(True)
-    waitingline_luggage.length.monitor(True)
+    waitingline_luggageDropoff.length.monitor(True)
     env.run(duration=4*60*60)
 
     passport_length += waitingline_passport.length.mean()
     passport_waiting += waitingline_passport.length_of_stay.mean()
-    luggage_pickup_length += waitingline_luggage.length.mean()
-    luggage_pickup_waiting += waitingline_luggage.length_of_stay.mean()
+    luggage_pickup_length += waitingline_luggageDropoff.length.mean()
+    luggage_pickup_waiting += waitingline_luggageDropoff.length_of_stay.mean()
 
 print()
 print("-- Pax Statistics --")
@@ -183,7 +226,7 @@ print("luggage pickup length mean:",luggage_pickup_length/replications)
 print("luggage pickup waiting time mean [s]:",luggage_pickup_waiting/replications)
 print()
 print("-- Utilization Statistics --")
-print("passport control utilization:")
-print("scanner utilization:")
-print("patdown utilization:")
+print("passport control utilization:",passportControl.getUtilization())
+print("scanner utilization:",securityScan.getUtilization())
+print("patdown utilization:",patDown.getUtilization())
 print()
