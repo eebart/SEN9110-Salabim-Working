@@ -53,9 +53,9 @@ class Passenger(sim.Component):
         luggagePickup.monitor_time_in_complex.tally(env.now() - self.arrivaltime)
 
 class Luggage(sim.Component):
-    def __init__(self, passengerName, *args, **kwargs):
+    def __init__(self, passenger, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.owner = passengerName
+        self.owner = passenger
 
     def process(self):
         # Roll along luggage belt
@@ -63,9 +63,10 @@ class Luggage(sim.Component):
 
         # Enter luggage waiting line
         self.enter(waitingline_luggageLuggagePickup)
-        #if luggagePickup.ispassive():
-        #        luggagePickup.activate()
-        self.passivate()
+        if luggagePickup.ispassive():
+            luggagePickup.activate()
+
+        yield self.passivate()
 
 class Server(sim.Component):
     def __init__(self, *args, **kwargs):
@@ -94,7 +95,7 @@ class PassportControl(Server):
 
             self.startUtilTime()
             self.passenger = waitingline_passport.pop()
-            yield self.hold(sim.Triangular(30.,90.,45.).sample())
+            yield self.hold(sim.Triangular(30,90,45).sample())
             self.passenger.activate()
 
 class LuggageDropoff(Server):
@@ -105,7 +106,7 @@ class LuggageDropoff(Server):
 
             self.passenger = waitingline_luggageDropoff.pop()
 
-            Luggage(self.passenger.name())
+            Luggage(self.passenger)
             yield self.hold(sim.Uniform(20,40).sample())
             self.passenger.activate()
 
@@ -139,17 +140,13 @@ class LuggagePickup(Server):
       self.monitor_time_in_complex = sim.Monitor(name='time in complex')
 
     def process(self):
-        noMatches = False
-
         while True:
-            while len(waitingline_passengerLuggagePickup) == 0 or len(waitingline_luggageLuggagePickup) == 0 or noMatches:
+            while len(waitingline_passengerLuggagePickup) == 0 or len(waitingline_luggageLuggagePickup) == 0:
                 yield self.passivate()
 
             for passenger in waitingline_passengerLuggagePickup:
-                #print(passenger.name())
                 for luggage in waitingline_luggageLuggagePickup:
-                    #print(luggage.name())
-                    if luggage.owner == passenger.name():
+                    if luggage.owner.name() == passenger.name():
                         #found luggage of owner!
                         waitingline_passengerLuggagePickup.remove(passenger)
                         waitingline_luggageLuggagePickup.remove(luggage)
@@ -159,7 +156,7 @@ class LuggagePickup(Server):
 
                         break
 
-            noMatches = True
+            yield self.passivate()
 
 #pax statistics
 pax_thru_mean = 0
