@@ -1,3 +1,4 @@
+#edited by steipatr at 15:23
 import salabim as sim
 import time, sys
 
@@ -19,18 +20,18 @@ class Passenger(sim.Component):
         # Walking from passport control to security scan
         yield self.hold(5/(2.5*1000/(60*60))) # convert 2.5 km/h to m/s
 
+        # Put luggage on belt
+        self.enter(waitingline_luggageDropoff)
+        if luggageDropoff.ispassive():
+            luggageDropoff.activate()
+        yield self.passivate()        
+        
         # Security Scan
         self.enter(waitingline_security)
         if securityScan.ispassive():
             securityScan.activate()
         yield self.passivate()
-
-        # Put luggage on belt
-        self.enter(waitingline_luggageDropoff)
-        if luggageDropoff.ispassive():
-            luggageDropoff.activate()
-        yield self.passivate()
-
+        
         # 10% Pat Down Requirement
         if (sim.Uniform(1,100).sample() <= 10):
             # Walking from security scan to patdown
@@ -204,7 +205,7 @@ for exp in range(0,replications):
 
     #TODO why suspend only length monitoring? Does everything need to be suspended?
     # Warm-up - don't collect statistics
-    waitingline_passport.length.monitor(False)
+    waitingline_passport.length.monitor(False)    
     waitingline_security.length.monitor(False)
     waitingline_patdown.length.monitor(False)
     waitingline_luggageDropoff.length.monitor(False)
@@ -234,22 +235,22 @@ for exp in range(0,replications):
     passport_util += [passportControl.getUtilization()]
     scanner_util += [securityScan.getUtilization()]
     patdown_util += [patDown.getUtilization()]
-
+    
 print()
-print("-- Pax Statistics --")
+print("-- Passenger Statistics --")
 print("passenger throughput time mean [s]:", avg(pax_thru_mean)) 
 print("passenger throughput time 95% confidence interval [s]:", avg(pax_thru_95))
 print()
 print("-- Queue Statistics --")
-print("passport queue length mean:",avg(passport_length))
+print("passport queue length mean [persons]:",avg(passport_length))
 print("passport queue waiting time mean [s]:", avg(passport_waiting))
-print("luggage drop length mean:", avg(luggage_drop_length))
+print("luggage drop length mean [persons]:", avg(luggage_drop_length))
 print("luggage drop waiting time mean [s]:", avg(luggage_drop_waiting))
-print("luggage pickup length mean:", avg(luggage_pickup_length))
+print("luggage pickup length mean [persons]:", avg(luggage_pickup_length))
 print("luggage pickup waiting time mean [s]:", avg(luggage_pickup_waiting))
 print()
 print("-- Utilization Statistics --")
-print("passport control utilization:", avg(passport_util)) 
-print("scanner utilization:", avg(scanner_util)) 
-print("patdown utilization:", avg(patdown_util))
+print("passport control utilization [%]:", avg(passport_util)) 
+print("scanner utilization [%]:", avg(scanner_util)) 
+print("patdown utilization [%]:", avg(patdown_util))
 print()
