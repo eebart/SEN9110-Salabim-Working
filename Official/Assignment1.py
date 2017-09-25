@@ -1,4 +1,3 @@
-#edited by steipatr at 15:23
 import salabim as sim
 import time, sys
 
@@ -158,22 +157,28 @@ class LuggagePickup(Server):
 
             yield self.passivate()
 
+def avg(lst):
+    cleanedlst = [x for x in lst if str(x) != 'nan']
+    if len(cleanedlst)==0:
+        return 0
+    return sum(cleanedlst)/len(cleanedlst)
+            
 #pax statistics
-pax_thru_mean = 0
-pax_thru_95 = 0
+pax_thru_mean = []
+pax_thru_95 = []
 
 #queue statistics
-passport_length = 0
-passport_waiting = 0
-luggage_drop_length = 0
-luggage_drop_waiting = 0
-luggage_pickup_length = 0
-luggage_pickup_waiting = 0
+passport_length = []
+passport_waiting = []
+luggage_drop_length = []
+luggage_drop_waiting = []
+luggage_pickup_length = []
+luggage_pickup_waiting = []
 
 #utilization statistics
-passport_util = 0
-scanner_util = 0
-patdown_util = 0
+passport_util = []
+scanner_util = []
+patdown_util = []
 
 replications = 10
 if len(sys.argv) > 1:
@@ -181,7 +186,7 @@ if len(sys.argv) > 1:
 
 for exp in range(0,replications):
     #steipatr non-random seed for reproduceability
-    env = sim.Environment(trace=True,random_seed=exp)
+    env = sim.Environment(trace=False,random_seed=exp)
 
     PassengerGenerator()
     passportControl = PassportControl()
@@ -216,32 +221,35 @@ for exp in range(0,replications):
     waitingline_passengerLuggagePickup.length.monitor(True)
     env.run(duration=4*60*60)
 
-    pax_thru_mean += luggagePickup.monitor_time_in_complex.mean()
-    pax_thru_95 += luggagePickup.monitor_time_in_complex.percentile(95)
+    pax_thru_mean += [luggagePickup.monitor_time_in_complex.mean()]
+    pax_thru_95 += [luggagePickup.monitor_time_in_complex.percentile(95)/replications]
 
-    passport_length += waitingline_passport.length.mean()
-    passport_waiting += waitingline_passport.length_of_stay.mean()
-    luggage_drop_length += waitingline_luggageDropoff.length.mean()
-    luggage_drop_waiting += waitingline_luggageDropoff.length_of_stay.mean()
-    luggage_pickup_length += waitingline_passengerLuggagePickup.length.mean()
-    luggage_pickup_waiting += waitingline_passengerLuggagePickup.length_of_stay.mean()
+    passport_length += [waitingline_passport.length.mean()]
+    passport_waiting += [waitingline_passport.length_of_stay.mean()]
+    luggage_drop_length += [waitingline_luggageDropoff.length.mean()]
+    luggage_drop_waiting += [waitingline_luggageDropoff.length_of_stay.mean()]
+    luggage_pickup_length += [waitingline_passengerLuggagePickup.length.mean()]
+    luggage_pickup_waiting += [waitingline_passengerLuggagePickup.length_of_stay.mean()]
+    
+    passport_util += [passportControl.getUtilization()]
+    scanner_util += [securityScan.getUtilization()]
+    patdown_util += [patDown.getUtilization()]
 
 print()
 print("-- Pax Statistics --")
-print("passenger throughput time mean [s]:",pax_thru_mean/replications)
-#TODO why not use pax_thru_95 here?
-print("passenger throughput time 95% confidence interval [s]:",luggagePickup.monitor_time_in_complex.percentile(95)/replications)
+print("passenger throughput time mean [s]:", avg(pax_thru_mean)) 
+print("passenger throughput time 95% confidence interval [s]:", avg(pax_thru_95))
 print()
 print("-- Queue Statistics --")
-print("passport queue length mean:",passport_length/replications)
-print("passport queue waiting time mean [s]:",passport_waiting/replications)
-print("luggage drop length mean:",luggage_drop_length/replications)
-print("luggage drop waiting time mean [s]:",luggage_drop_waiting/replications)
-print("luggage pickup length mean:",luggage_pickup_length/replications)
-print("luggage pickup waiting time mean [s]:",luggage_pickup_waiting/replications)
+print("passport queue length mean:",avg(passport_length))
+print("passport queue waiting time mean [s]:", avg(passport_waiting))
+print("luggage drop length mean:", avg(luggage_drop_length))
+print("luggage drop waiting time mean [s]:", avg(luggage_drop_waiting))
+print("luggage pickup length mean:", avg(luggage_pickup_length))
+print("luggage pickup waiting time mean [s]:", avg(luggage_pickup_waiting))
 print()
 print("-- Utilization Statistics --")
-print("passport control utilization:",passportControl.getUtilization())
-print("scanner utilization:",securityScan.getUtilization())
-print("patdown utilization:",patDown.getUtilization())
+print("passport control utilization:", avg(passport_util)) 
+print("scanner utilization:", avg(scanner_util)) 
+print("patdown utilization:", avg(patdown_util))
 print()
