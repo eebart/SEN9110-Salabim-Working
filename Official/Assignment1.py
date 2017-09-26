@@ -20,16 +20,16 @@ class Passenger(sim.Component):
         # Walking from passport control to security scan
         yield self.hold(5/(2.5*1000/(60*60))) # convert 2.5 km/h to m/s
 
-        # Security Scan
-        self.enter(waitingline_security)
-        if securityScan.ispassive():
-            securityScan.activate()
-        yield self.passivate()
-
         # Put luggage on belt
         self.enter(waitingline_luggageDropoff)
         if luggageDropoff.ispassive():
             luggageDropoff.activate()
+        yield self.passivate()
+
+        # Security Scan
+        self.enter(waitingline_security)
+        if securityScan.ispassive():
+            securityScan.activate()
         yield self.passivate()
 
         # 10% Pat Down Requirement
@@ -59,7 +59,7 @@ class Luggage(sim.Component):
 
     def process(self):
         # Roll along luggage belt
-        yield self.hold(10/(2.5*1000/(60*60))) # convert 2.5 km/h to m/s
+        yield self.hold(10/0.5)
 
         # Enter luggage waiting line
         self.enter(waitingline_luggageLuggagePickup)
@@ -72,6 +72,7 @@ class Server(sim.Component):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.activeTime = 0
+        self.activeTimeManual = 0
         self.startProcessTime = -1
 
     def startUtilTime(self):
@@ -86,6 +87,9 @@ class Server(sim.Component):
     def getUtilization(self):
         return self.activeTime / (env.now() - self._creation_time)
 
+    def getUtilizationManual(self):
+        return self.activeTimeManual / (env.now() - self._creation_time)
+
 class PassportControl(Server):
     def process(self):
         while True:
@@ -95,7 +99,11 @@ class PassportControl(Server):
 
             self.startUtilTime()
             self.passenger = waitingline_passport.pop()
-            yield self.hold(sim.Triangular(30,90,45).sample())
+
+            sample = sim.Triangular(30,90,45).sample()
+            self.activeTimeManual += sample
+            yield self.hold(sample)
+
             self.passenger.activate()
 
 class LuggageDropoff(Server):
@@ -119,7 +127,9 @@ class SecurityScan(Server):
 
             self.startUtilTime()
             self.passenger = waitingline_security.pop()
-            yield self.hold(10)
+            sample = 10
+            self.activeTimeManual += sample
+            yield self.hold(sample)
             self.passenger.activate()
 
 class PatDown(Server):
@@ -131,7 +141,11 @@ class PatDown(Server):
 
             self.startUtilTime()
             self.passenger = waitingline_patdown.pop()
-            yield self.hold(sim.Uniform(60,120).sample())
+
+            sample = sim.Uniform(60,120).sample()
+            self.activeTimeManual += sample
+            yield self.hold(sample)
+
             self.passenger.activate()
 
 class LuggagePickup(Server):
@@ -179,9 +193,13 @@ replications = 10
 if len(sys.argv) > 1:
     replications = int(sys.argv[1])
 
+trace = False
+if replications == 1:
+    trace = True
+
 for exp in range(0,replications):
     #steipatr non-random seed for reproduceability
-    env = sim.Environment(trace=True,random_seed=exp)
+    env = sim.Environment(trace=trace,random_seed=exp)
 
     PassengerGenerator()
     passportControl = PassportControl()
@@ -241,7 +259,7 @@ print("luggage pickup length mean:",luggage_pickup_length/replications)
 print("luggage pickup waiting time mean [s]:",luggage_pickup_waiting/replications)
 print()
 print("-- Utilization Statistics --")
-print("passport control utilization:",passportControl.getUtilization())
-print("scanner utilization:",securityScan.getUtilization())
-print("patdown utilization:",patDown.getUtilization())
+print("passport control utilization:",passportControl.getUtilizationManual())
+print("scanner utilization:",securityScan.getUtilizationManual())
+print("patdown utilization:",patDown.getUtilizationManual())
 print()
