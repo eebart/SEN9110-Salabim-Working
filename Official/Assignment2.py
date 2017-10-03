@@ -20,16 +20,16 @@ class Passenger(sim.Component):
         # Walking from passport control to security scan
         yield self.hold(5/(2.5*1000/(60*60))) # convert 2.5 km/h to m/s
 
-        # Security Scan
-        self.enter(waitingline_security)
-        if securityScan.ispassive():
-            securityScan.activate()
-        yield self.passivate()
-
         # Put luggage on belt
         self.enter(waitingline_luggageDropoff)
         if luggageDropoff.ispassive():
             luggageDropoff.activate()
+        yield self.passivate()
+
+        # Security Scan
+        self.enter(waitingline_security)
+        if securityScan.ispassive():
+            securityScan.activate()
         yield self.passivate()
 
         # 10% Pat Down Requirement
