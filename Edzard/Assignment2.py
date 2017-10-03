@@ -15,10 +15,6 @@ class QueueAnimate(sim.Animate):
     def rectangle(self, t):
         d = len(self.queue)
         return(165, 100 + self.queue.n * 90,165 + d * SCALE, 100 + self.queue.n * 90 + 20)
-        # x0, 150                            (x coordinate of bottom left)
-        # y0, 100 + self.queue.n * 90.       (y coordinate of bottom left)
-        # x1, 150 + d * SCALE                (width of rectangle)
-        # y1, 100 + self.queue.n * 90 + 20.  (height of rectangle)
 
     def fillcolor(self, t):
         return self.queue.color
@@ -55,7 +51,6 @@ def do_animation():
     for _,queue in queues.items():
         QueueAnimate(queue)
         QueueTextAnimate(queue)
-    #Animate(x0=100,y0=100,rectangle0==(-10,-10,10,10))
 
 class PassengerGenerator(sim.Component):
     def process(self):
@@ -157,7 +152,6 @@ class PassportControl(Server):
             while len(queues['waitingline_passport']) == 0:
                 self.endUtilTime()
                 yield self.passivate(mode='idle')
-                print(passportControl.mode())
 
             self.startUtilTime()
             self.passenger = queues['waitingline_passport'].pop()
@@ -165,7 +159,6 @@ class PassportControl(Server):
             sample = sim.Triangular(30,90,45).sample()
             self.activeTimeManual += sample
             yield self.hold(sample, mode='busy')
-            print(passportControl.mode())
 
             self.passenger.activate()
 
@@ -272,7 +265,7 @@ queues = {
     'waitingline_luggageDropoff': Queue(name='waitingline_luggageDropoff', text='Luggage Dropoff ', queue_num=4, color='black'),
     'waitingline_security': Queue(name='waitingline_security', text='Security Scan   ', queue_num=3, color='black'),
     'waitingline_patdown': Queue(name='waitingline_patdown', text='Pat Down        ', queue_num=2, color='black'),
-    'waitingline_luggageLuggagePickup': Queue(name='waitingline_luggageLuggagePickup', text='Waiting Luggage ',queue_num=1, color='brown'),
+    'waitingline_luggageLuggagePickup': Queue(name='waitingline_luggageLuggagePickup', text='Waiting Luggage ',queue_num=1, color='gray'),
     'waitingline_passengerLuggagePickup': Queue(name='waitingline_passengerLuggagePickup', text='Luggage Pickup  ', queue_num=0, color='black'),
 }
 
