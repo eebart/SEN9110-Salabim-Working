@@ -1,6 +1,8 @@
-#edited by steipatr at 15:23
 import salabim as sim
 import time, sys
+
+HOURS = 4                   # Simulation time in hours
+SIM_TIME = HOURS * 60 * 60  # Simulation time in seconds
 
 class PassengerGenerator(sim.Component):
     def process(self):
@@ -9,7 +11,12 @@ class PassengerGenerator(sim.Component):
             yield self.hold(sim.Exponential(60).sample())
 
 class Passenger(sim.Component):
+    def setup(self):
+        processingtime = sim.Pdf(0, 20, 1, 40, 2, 30, 1, 10)
+
     def process(self):
+        walkingSpeed = sim.Triangular(2,5,3).sample()
+
         self.arrivaltime = env.now()
         # Passport control
         self.enter(waitingline_passport)
@@ -17,14 +24,29 @@ class Passenger(sim.Component):
             passportControl.activate()
         yield self.passivate()
 
+        #additional passport processing for this passenger
+        if (sim.Uniform(1,100).sample() <= 6):
+            #walk to supervisor
+            yield self.hold(12)
+            self.enter(waitingline_supervisor)
+            if supervisor.ispassive():
+                supervisor.activate()
+            yield self.passivate()
+
+            #walk back to passport control
+            yield self.hold(12)
+
         # Walking from passport control to security scan
-        yield self.hold(5/(2.5*1000/(60*60))) # convert 2.5 km/h to m/s
+        yield self.hold(5/(walkingSpeed*1000/(60*60))) # convert 2.5 km/h to m/s
 
         # Put luggage on belt
-        self.enter(waitingline_luggageDropoff)
-        if luggageDropoff.ispassive():
-            luggageDropoff.activate()
-        yield self.passivate()
+        if self.piecesLuggage > 0:
+            self.enter(waitingline_luggageDropoff)
+            for luggageDropoff in luggageDropoffs:
+                if luggageDropoff.ispassive():
+                    luggageDropoff.activate()
+                    break  # activate only one dropoff
+            yield self.passivate()
 
         # Security Scan
         self.enter(waitingline_security)
@@ -35,7 +57,7 @@ class Passenger(sim.Component):
         # 10% Pat Down Requirement
         if (sim.Uniform(1,100).sample() <= 10):
             # Walking from security scan to patdown
-            yield self.hold(5/(2.5*1000/(60*60))) # convert 2.5 km/h to m/s
+            yield self.hold(5/(walkingSpeed*1000/(60*60))) # convert 2.5 km/h to m/s
             # Patdown
             self.enter(waitingline_patdown)
             if patDown.ispassive():
@@ -43,18 +65,24 @@ class Passenger(sim.Component):
             yield self.passivate()
 
         # Walking along luggage belt
-        yield self.hold(10/(0.5*1000/(60*60))) # convert 2.5 km/h to m/s
+        yield self.hold(10/(walkingSpeed*1000/(60*60))) # convert 2.5 km/h to m/s
 
         # Pick up luggage, matching owner
-        self.enter(waitingline_passengerLuggagePickup)
-        if luggagePickup.ispassive():
-            luggagePickup.activate()
-        yield self.passivate()
+        while self.piecesLuggage > 0:
+            self.enter(waitingline_passengerLuggagePickup)
+
+            if luggagePickup.ispassive():
+                luggagePickup.activate()
+            yield self.passivate()
+
+            # unload luggage. Done here because sapce to unload is unlimited
+            yield self.hold(sim.Exponential(30).sample(), mode='unloading')
+            self.piecesLuggage -= 1
+
         luggagePickup.monitor_time_in_complex.tally(env.now() - self.arrivaltime)
 
 class Luggage(sim.Component):
-    def __init__(self, passenger, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def setup(self, passenger):
         self.owner = passenger
 
     def process(self):
@@ -74,6 +102,7 @@ class Server(sim.Component):
         self.activeTime = 0
         self.activeTimeManual = 0
         self.startProcessTime = -1
+        self.number = 0
 
     def startUtilTime(self):
         self.startProcessTime = env.now()
@@ -95,14 +124,30 @@ class PassportControl(Server):
         while True:
             while len(waitingline_passport) == 0:
                 self.endUtilTime()
-                yield self.passivate()
+                yield self.passivate(mode='idle')
 
             self.startUtilTime()
             self.passenger = waitingline_passport.pop()
 
             sample = sim.Triangular(30,90,45).sample()
             self.activeTimeManual += sample
-            yield self.hold(sample)
+            yield self.hold(sample, mode='busy')
+
+            self.passenger.activate()
+
+class Supervisor(Server):
+    def process(self):
+        while True:
+            while len(waitingline_supervisor) == 0:
+                self.endUtilTime()
+                yield self.passivate(mode='idle')
+
+            self.startUtilTime()
+            self.passenger = waitingline_supervisor.pop()
+
+            sample = sim.Uniform(30,45).sample()
+            self.activeTimeManual += sample
+            yield self.hold(sample, mode='busy')
 
             self.passenger.activate()
 
@@ -110,12 +155,13 @@ class LuggageDropoff(Server):
     def process(self):
         while True:
             while len(waitingline_luggageDropoff) == 0:
-                yield self.passivate()
+                yield self.passivate(mode='idle')
 
             self.passenger = waitingline_luggageDropoff.pop()
 
-            Luggage(self.passenger)
-            yield self.hold(sim.Uniform(20,40).sample())
+            for i in self.passenger.piecesLuggage:
+                Luggage(self.passenger)
+                yield self.hold(sim.Exponential(30).sample(), mode='busy')
             self.passenger.activate()
 
 class SecurityScan(Server):
@@ -123,13 +169,13 @@ class SecurityScan(Server):
         while True:
             while len(waitingline_security) == 0:
                 self.endUtilTime()
-                yield self.passivate()
+                yield self.passivate(mode='idle')
 
             self.startUtilTime()
             self.passenger = waitingline_security.pop()
             sample = 10
             self.activeTimeManual += sample
-            yield self.hold(sample)
+            yield self.hold(sample, mode='busy')
             self.passenger.activate()
 
 class PatDown(Server):
@@ -137,26 +183,26 @@ class PatDown(Server):
         while True:
             while len(waitingline_patdown) == 0:
                 self.endUtilTime()
-                yield self.passivate()
+                yield self.passivate(mode='idle')
 
             self.startUtilTime()
             self.passenger = waitingline_patdown.pop()
+            print(self.passenger.name)
 
             sample = sim.Uniform(60,120).sample()
             self.activeTimeManual += sample
-            yield self.hold(sample)
+            yield self.hold(sample, mode='busy')
 
             self.passenger.activate()
 
 class LuggagePickup(Server):
-    def __init__(self, *args, **kwargs):
-      super().__init__(*args, **kwargs)
+    def setup(self):
       self.monitor_time_in_complex = sim.Monitor(name='time in complex')
 
     def process(self):
         while True:
-            while len(waitingline_passengerLuggagePickup) == 0 or len(waitingline_luggageLuggagePickup) == 0:
-                yield self.passivate()
+            while len(waitingline_passengerLuggagePickup) == 0 or len(queues['waitingline_luggageLuggagePickup']) == 0:
+                yield self.passivate(mode='idle')
 
             for passenger in waitingline_passengerLuggagePickup:
                 for luggage in waitingline_luggageLuggagePickup:
@@ -164,13 +210,15 @@ class LuggagePickup(Server):
                         #found luggage of owner!
                         waitingline_passengerLuggagePickup.remove(passenger)
                         waitingline_luggageLuggagePickup.remove(luggage)
-                        yield self.hold(sim.Uniform(20,40).sample())
+
+                        #yield self.hold(sim.Exponential(30).sample(), mode='busy')
+
                         passenger.activate()
                         #luggage.activate() This is problematic because it is never the luggage who activates successfully
 
                         break
 
-            yield self.passivate()
+            yield self.passivate(mode='idle')
 
 def avg(lst):
     cleanedlst = [x for x in lst if str(x) != 'nan']
@@ -204,26 +252,28 @@ if replications == 1:
     trace = True
 
 for exp in range(0,replications):
-    #steipatr non-random seed for reproduceability
-<<<<<<< HEAD
-    env = sim.Environment(trace=False,random_seed=exp)
-=======
     env = sim.Environment(trace=trace,random_seed=exp)
->>>>>>> fd7ceeaedeb650adbab9695d62d129e93313e455
 
     PassengerGenerator()
     passportControl = PassportControl()
-    luggageDropoff = LuggageDropoff()
+    supervisor = Supervisor()
     securityScan = SecurityScan()
     patDown = PatDown()
     luggagePickup = LuggagePickup()
+    #luggageDropoff = LuggageDropoff()
+
+    luggageDropoffs = sim.Queue('dropoffs')
+    for i in range(3):
+        LuggageDropoff().enter(luggageDropoffs)
 
     waitingline_passport = sim.Queue('waitingline_passport')
+    waitingline_supervisor = sim.Queue('waitingline_supervisor')
     waitingline_security = sim.Queue('waitingline_security')
     waitingline_patdown = sim.Queue('waitingline_patdown')
     waitingline_luggageDropoff = sim.Queue('waitingline_luggageDropoff')
     waitingline_luggageLuggagePickup = sim.Queue('waitingline_luggageLuggagePickup')
     waitingline_passengerLuggagePickup = sim.Queue('waitingline_passengerLuggagePickup')
+
 
     #TODO why suspend only length monitoring? Does everything need to be suspended?
     # Warm-up - don't collect statistics
@@ -242,7 +292,7 @@ for exp in range(0,replications):
     waitingline_luggageDropoff.length.monitor(True)
     waitingline_luggageLuggagePickup.length.monitor(True)
     waitingline_passengerLuggagePickup.length.monitor(True)
-    env.run(duration=4*60*60)
+    env.run(duration=SIM_TIME)
 
     pax_thru_mean += [luggagePickup.monitor_time_in_complex.mean()]
     pax_thru_95 += [luggagePickup.monitor_time_in_complex.percentile(95)/replications]
@@ -254,9 +304,9 @@ for exp in range(0,replications):
     luggage_pickup_length += [waitingline_passengerLuggagePickup.length.mean()]
     luggage_pickup_waiting += [waitingline_passengerLuggagePickup.length_of_stay.mean()]
 
-    passport_util += [passportControl.getUtilization()]
-    scanner_util += [securityScan.getUtilization()]
-    patdown_util += [patDown.getUtilization()]
+    passport_util += [passportControl.getUtilizationManual()]
+    scanner_util += [securityScan.getUtilizationManual()]
+    patdown_util += [patDown.getUtilizationManual()]
 
 print()
 print("-- Passenger Statistics --")
@@ -272,14 +322,7 @@ print("luggage pickup length mean [persons]:", avg(luggage_pickup_length))
 print("luggage pickup waiting time mean [s]:", avg(luggage_pickup_waiting))
 print()
 print("-- Utilization Statistics --")
-<<<<<<< HEAD
-print("passport control utilization [%]:", avg(passport_util))
-print("scanner utilization [%]:", avg(scanner_util))
-print("patdown utilization [%]:", avg(patdown_util))
+print("passport control utilization [%]:", avg(passport_util)*100)
+print("scanner utilization [%]:", avg(scanner_util)*100)
+print("patdown utilization [%]:", avg(patdown_util)*100)
 print()
-=======
-print("passport control utilization:",passportControl.getUtilizationManual())
-print("scanner utilization:",securityScan.getUtilizationManual())
-print("patdown utilization:",patDown.getUtilizationManual())
-print()
->>>>>>> fd7ceeaedeb650adbab9695d62d129e93313e455
