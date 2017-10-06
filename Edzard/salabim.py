@@ -6235,6 +6235,22 @@ class State(object):
         '''
         self.value.reset()
 
+    def reset_monitors(monitor=None):
+        '''
+        resets the timestamped monitor for the state’s value
+
+        Parameters
+        ----------
+        monitor : bool
+        if True (default}, monitoring will be on. |n|
+            if False, monitoring is disabled
+
+        Note
+        ----
+        Equivalent to ``state.value.reset()``
+        '''
+        self.value.reset()
+
     def _get_value(self):
         return self._value
 
