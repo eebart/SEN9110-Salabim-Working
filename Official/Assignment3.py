@@ -12,7 +12,7 @@ class PassengerGenerator(sim.Component):
 
 class Passenger(sim.Component):
     def setup(self):
-        piecesLuggage = sim.Pdf(0, 20, 1, 40, 2, 30, 1, 10)
+        self.piecesLuggage = sim.Pdf((0,1,2,1),(20,40,30,10)).sample()
 
     def process(self):
         walkingSpeed = sim.Triangular(2,5,3).sample()
@@ -28,10 +28,11 @@ class Passenger(sim.Component):
         if (sim.Uniform(1,100).sample() <= 6):
             #walk to supervisor
             yield self.hold(12)
-            self.enter(waitingline_supervisor)
-            if supervisor.ispassive():
-                supervisor.activate()
-            yield self.passivate()
+
+            # wait for and interact with supervisor
+            yield self.request(supervisor)
+            yield self.hold(sim.Uniform(30,45).sample(), mode='busy')
+            self.release()
 
             #walk back to passport control
             yield self.hold(12)
@@ -68,7 +69,8 @@ class Passenger(sim.Component):
         yield self.hold(10/(walkingSpeed*1000/(60*60))) # convert 2.5 km/h to m/s
 
         # Pick up luggage, matching owner
-        while self.piecesLuggage > 0:
+        toPickUp = self.piecesLuggage
+        while toPickUp > 0:
             self.enter(waitingline_passengerLuggagePickup)
 
             if luggagePickup.ispassive():
@@ -77,7 +79,7 @@ class Passenger(sim.Component):
 
             # unload luggage. Done here because sapce to unload is unlimited
             yield self.hold(sim.Exponential(30).sample(), mode='unloading')
-            self.piecesLuggage -= 1
+            toPickUp -= 1
 
         luggagePickup.monitor_time_in_complex.tally(env.now() - self.arrivaltime)
 
@@ -135,22 +137,6 @@ class PassportControl(Server):
 
             self.passenger.activate()
 
-class Supervisor(Server):
-    def process(self):
-        while True:
-            while len(waitingline_supervisor) == 0:
-                self.endUtilTime()
-                yield self.passivate(mode='idle')
-
-            self.startUtilTime()
-            self.passenger = waitingline_supervisor.pop()
-
-            sample = sim.Uniform(30,45).sample()
-            self.activeTimeManual += sample
-            yield self.hold(sample, mode='busy')
-
-            self.passenger.activate()
-
 class LuggageDropoff(Server):
     def process(self):
         while True:
@@ -159,9 +145,12 @@ class LuggageDropoff(Server):
 
             self.passenger = waitingline_luggageDropoff.pop()
 
-            for i in self.passenger.piecesLuggage:
-                Luggage(self.passenger)
+            count = 0
+            for i in range(self.passenger.piecesLuggage):
+                count += 1
+                Luggage(passenger=self.passenger)
                 yield self.hold(sim.Exponential(30).sample(), mode='busy')
+
             self.passenger.activate()
 
 class SecurityScan(Server):
@@ -187,7 +176,6 @@ class PatDown(Server):
 
             self.startUtilTime()
             self.passenger = waitingline_patdown.pop()
-            print(self.passenger.name)
 
             sample = sim.Uniform(60,120).sample()
             self.activeTimeManual += sample
@@ -201,7 +189,7 @@ class LuggagePickup(Server):
 
     def process(self):
         while True:
-            while len(waitingline_passengerLuggagePickup) == 0 or len(queues['waitingline_luggageLuggagePickup']) == 0:
+            while len(waitingline_passengerLuggagePickup) == 0 or len(waitingline_luggageLuggagePickup) == 0:
                 yield self.passivate(mode='idle')
 
             for passenger in waitingline_passengerLuggagePickup:
@@ -256,11 +244,10 @@ for exp in range(0,replications):
 
     PassengerGenerator()
     passportControl = PassportControl()
-    supervisor = Supervisor()
+    supervisor = sim.Resource('supervisor', 1)
     securityScan = SecurityScan()
     patDown = PatDown()
     luggagePickup = LuggagePickup()
-    #luggageDropoff = LuggageDropoff()
 
     luggageDropoffs = sim.Queue('dropoffs')
     for i in range(3):
@@ -273,7 +260,6 @@ for exp in range(0,replications):
     waitingline_luggageDropoff = sim.Queue('waitingline_luggageDropoff')
     waitingline_luggageLuggagePickup = sim.Queue('waitingline_luggageLuggagePickup')
     waitingline_passengerLuggagePickup = sim.Queue('waitingline_passengerLuggagePickup')
-
 
     #TODO why suspend only length monitoring? Does everything need to be suspended?
     # Warm-up - don't collect statistics

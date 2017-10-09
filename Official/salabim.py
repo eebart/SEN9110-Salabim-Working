@@ -5819,7 +5819,7 @@ class Pdf(_Distribution):
         sumxp = 0
         lastx = -inf
         hasmean = True
-        if spec2 is None:
+        if probabilities is None:
             spec = list(spec1)
 
             if len(spec) == 0:
@@ -5841,8 +5841,8 @@ class Pdf(_Distribution):
                     hasmean = False
         else:
             spec = list(spec1)
-            if isinstance(spec2, (list, tuple)):
-                spec2 = list(spec2)
+            if isinstance(probabilities, (list, tuple)):
+                spec2 = list(probabilities)
             else:
                 spec2 = len(spec) * [1]
             if len(spec) != len(spec2):
