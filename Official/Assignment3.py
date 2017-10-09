@@ -12,7 +12,7 @@ class PassengerGenerator(sim.Component):
 
 class Passenger(sim.Component):
     def setup(self):
-        processingtime = sim.Pdf(0, 20, 1, 40, 2, 30, 1, 10)
+        piecesLuggage = sim.Pdf(0, 20, 1, 40, 2, 30, 1, 10)
 
     def process(self):
         walkingSpeed = sim.Triangular(2,5,3).sample()
