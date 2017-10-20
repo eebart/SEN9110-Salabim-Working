@@ -25,7 +25,7 @@ class Passenger(sim.Component):
         yield self.passivate()
 
         #additional passport processing for this passenger
-        if (sim.Uniform(1,100).sample() <= 6):
+        if sim.Uniform(1,100).sample() <= 6:
             #walk to supervisor
             yield self.hold(12)
 
@@ -199,7 +199,7 @@ class LuggagePickup(Server):
                         waitingline_passengerLuggagePickup.remove(passenger)
                         waitingline_luggageLuggagePickup.remove(luggage)
 
-                        #yield self.hold(sim.Exponential(30).sample(), mode='busy')
+                        #yield self.hold(sim.Exponential(30).sample(), mode='busy') moved to passenger object
 
                         passenger.activate()
                         #luggage.activate() This is problematic because it is never the luggage who activates successfully

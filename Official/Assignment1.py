@@ -205,11 +205,7 @@ if replications == 1:
 
 for exp in range(0,replications):
     #steipatr non-random seed for reproduceability
-<<<<<<< HEAD
-    env = sim.Environment(trace=False,random_seed=exp)
-=======
     env = sim.Environment(trace=trace,random_seed=exp)
->>>>>>> fd7ceeaedeb650adbab9695d62d129e93313e455
 
     PassengerGenerator()
     passportControl = PassportControl()
@@ -272,14 +268,7 @@ print("luggage pickup length mean [persons]:", avg(luggage_pickup_length))
 print("luggage pickup waiting time mean [s]:", avg(luggage_pickup_waiting))
 print()
 print("-- Utilization Statistics --")
-<<<<<<< HEAD
-print("passport control utilization [%]:", avg(passport_util))
-print("scanner utilization [%]:", avg(scanner_util))
-print("patdown utilization [%]:", avg(patdown_util))
-print()
-=======
 print("passport control utilization:",passportControl.getUtilizationManual())
 print("scanner utilization:",securityScan.getUtilizationManual())
 print("patdown utilization:",patDown.getUtilizationManual())
 print()
->>>>>>> fd7ceeaedeb650adbab9695d62d129e93313e455
